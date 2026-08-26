@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>청소당번 뽑기</title>
+
+<!-- Google Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Gaegu:wght@400;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+
+<!-- Bootstrap CSS -->
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<!-- Bootstrap Icons -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+
+<!-- Tailwind (Play CDN) -->
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          board: { DEFAULT: '#223b30', dark: '#182a22' },
+          wood: { DEFAULT: '#7a5233', dark: '#5e3e26' },
+          chalk: { white: '#f4f1e6', yellow: '#e8c15c', pink: '#e28b8f' }
+        },
+        fontFamily: {
+          gaegu: ['Gaegu', 'sans-serif'],
+          sans: ['Noto Sans KR', 'sans-serif']
+        }
+      }
+    }
+  }
+</script>
+
+<!-- SweetAlert2 -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+
+<style>
+  /* Bootstrap/Tailwind가 커버하지 못하는 칠판 질감 + SweetAlert2 커스텀 테마만 최소한으로 정의 */
+  body {
+    background-color: #182a22;
+    background-image:
+      radial-gradient(circle at 20% 20%, rgba(255,255,255,0.03), transparent 40%),
+      radial-gradient(circle at 80% 70%, rgba(255,255,255,0.025), transparent 45%);
+  }
+  .board-texture::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 0.5rem;
+    pointer-events: none;
+    background-image:
+      repeating-linear-gradient(0deg, rgba(255,255,255,0.015) 0 2px, transparent 2px 4px),
+      repeating-linear-gradient(90deg, rgba(255,255,255,0.012) 0 2px, transparent 2px 4px);
+  }
+  .num-cell.flicker {
+    color: #182a22 !important;
+    background-color: #e8c15c !important;
+    border-color: #e8c15c !important;
+    transform: scale(1.12) rotate(-3deg);
+  }
+  .num-cell.picked {
+    color: #182a22 !important;
+    background-color: #f4f1e6 !important;
+    border-color: #f4f1e6 !important;
+    box-shadow: 0 0 12px rgba(244,241,230,0.6);
+  }
+  .slot.filled {
+    border-style: solid !important;
+    border-color: #e28b8f !important;
+    background-color: rgba(226,139,143,0.12) !important;
+    animation: puff .35s ease-out;
+  }
+  @keyframes puff { 0%{transform:scale(.6)} 60%{transform:scale(1.12)} 100%{transform:scale(1)} }
+
+  .dust-particle {
+    position: absolute; width: 5px; height: 5px; border-radius: 9999px;
+    background: rgba(244,241,230,.5); opacity: 0;
+    animation: dust-fall .9s ease-out forwards;
+  }
+  @keyframes dust-fall { 0%{opacity:.9; transform:translateY(0) scale(1)} 100%{opacity:0; transform:translateY(60px) scale(.4)} }
+
+  /* SweetAlert2 칠판 테마 */
+  .swal-chalk-popup {
+    background: #223b30 !important;
+    border: 10px solid #7a5233 !important;
+    box-shadow: 0 0 0 4px #5e3e26 inset, 0 24px 50px rgba(0,0,0,.45) !important;
+  }
+  .swal-chalk-title { font-family: 'Gaegu', sans-serif !important; color: #f4f1e6 !important; }
+  .swal-chalk-text  { font-family: 'Noto Sans KR', sans-serif !important; color: rgba(244,241,230,.8) !important; }
+  .swal-chalk-confirm {
+    font-family: 'Noto Sans KR', sans-serif !important;
+    background-color: #e8c15c !important; color: #182a22 !important;
+    font-weight: 700 !important; box-shadow: 0 6px 0 #b5893a !important;
+  }
+  .swal-chalk-cancel {
+    font-family: 'Noto Sans KR', sans-serif !important;
+    background-color: transparent !important; color: #f4f1e6 !important;
+    border: 1.5px solid rgba(244,241,230,.4) !important;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .num-cell, .slot, .dust-particle { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center p-4 font-sans text-chalk-white">
+
+  <main class="flex flex-col items-center">
+    <div class="board-texture relative w-[92vw] max-w-xl bg-board border-[14px] border-wood rounded-xl shadow-2xl px-4 sm:px-9 pt-7 pb-8">
+
+      <header class="text-center mb-4">
+        <p class="font-gaegu text-chalk-yellow/90 tracking-widest">오늘의</p>
+        <h1 class="font-gaegu font-bold text-4xl sm:text-5xl -rotate-1 drop-shadow-[0_0_14px_rgba(244,241,230,0.18)]">
+          청소당번 뽑기
+        </h1>
+        <p class="text-sm text-chalk-white/70 mt-1">1번 ~ 30번 중에서 5명을 뽑습니다</p>
+      </header>
+
+      <section id="numberGrid" class="grid grid-cols-5 sm:grid-cols-6 gap-2 my-4" aria-label="학생 번호 1번부터 30번"></section>
+
+      <section class="grid grid-cols-5 gap-2 mb-4" aria-label="뽑힌 청소당번">
+        <div class="slot aspect-square rounded-full border-2 border-dashed border-chalk-white/35 flex items-center justify-center transition-all duration-200" data-slot="0"><span class="slot-num font-gaegu font-bold text-xl sm:text-2xl text-chalk-pink"></span></div>
+        <div class="slot aspect-square rounded-full border-2 border-dashed border-chalk-white/35 flex items-center justify-center transition-all duration-200" data-slot="1"><span class="slot-num font-gaegu font-bold text-xl sm:text-2xl text-chalk-pink"></span></div>
+        <div class="slot aspect-square rounded-full border-2 border-dashed border-chalk-white/35 flex items-center justify-center transition-all duration-200" data-slot="2"><span class="slot-num font-gaegu font-bold text-xl sm:text-2xl text-chalk-pink"></span></div>
+        <div class="slot aspect-square rounded-full border-2 border-dashed border-chalk-white/35 flex items-center justify-center transition-all duration-200" data-slot="3"><span class="slot-num font-gaegu font-bold text-xl sm:text-2xl text-chalk-pink"></span></div>
+        <div class="slot aspect-square rounded-full border-2 border-dashed border-chalk-white/35 flex items-center justify-center transition-all duration-200" data-slot="4"><span class="slot-num font-gaegu font-bold text-xl sm:text-2xl text-chalk-pink"></span></div>
+      </section>
+
+      <p id="status" class="text-center text-sm text-chalk-white/65 min-h-[1.2em] mb-4">칠판 아래 지우개를 눌러 뽑기를 시작하세요</p>
+
+      <button id="drawBtn" type="button"
+        class="btn w-full flex items-center justify-center gap-2 rounded-lg py-3 bg-chalk-yellow text-board-dark font-bold shadow-[0_6px_0_#b5893a] hover:-translate-y-0.5 active:translate-y-1 active:shadow-[0_3px_0_#b5893a] transition-transform disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0">
+        <i class="bi bi-eraser-fill"></i>
+        <span>지우개로 뽑기</span>
+      </button>
+
+    </div>
+
+    <div class="w-[84vw] max-w-md h-[18px] bg-wood-dark rounded-b-lg shadow-lg flex items-center justify-center gap-3.5">
+      <span class="w-8 h-2 rounded bg-chalk-white"></span>
+      <span class="w-8 h-2 rounded bg-chalk-yellow"></span>
+      <span class="w-8 h-2 rounded bg-chalk-pink"></span>
+    </div>
+  </main>
+
+  <div id="dustLayer" class="fixed inset-0 pointer-events-none overflow-hidden z-10" aria-hidden="true"></div>
+
+  <!-- Bootstrap JS bundle (Popper 포함) -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+  const TOTAL_STUDENTS = 30;
+  const PICK_COUNT = 5;
+
+  const numberGrid = document.getElementById('numberGrid');
+  const drawBtn = document.getElementById('drawBtn');
+  const statusEl = document.getElementById('status');
+  const slots = Array.from(document.querySelectorAll('.slot'));
+  const dustLayer = document.getElementById('dustLayer');
+
+  let hasDrawnBefore = false;
+
+  const cellBaseClasses = [
+    'num-cell','aspect-square','rounded-full','flex','items-center','justify-center',
+    'font-gaegu','font-bold','text-sm','sm:text-base','border','border-chalk-white/25',
+    'text-chalk-white/55','transition-all','duration-150'
+  ];
+
+  function buildGrid() {
+    numberGrid.innerHTML = '';
+    for (let n = 1; n <= TOTAL_STUDENTS; n++) {
+      const cell = document.createElement('div');
+      cell.className = cellBaseClasses.join(' ');
+      cell.dataset.num = n;
+      cell.textContent = n;
+      numberGrid.appendChild(cell);
+    }
+  }
+
+  function getCell(num) {
+    return numberGrid.querySelector(`[data-num="${num}"]`);
+  }
+
+  function resetBoard() {
+    numberGrid.querySelectorAll('.num-cell').forEach(c => c.classList.remove('flicker', 'picked'));
+    slots.forEach(s => {
+      s.classList.remove('filled');
+      s.querySelector('.slot-num').textContent = '';
+    });
+  }
+
+  // 중복 없이 1~30 중 5개 랜덤 선택
+  function pickRandomStudents() {
+    const pool = Array.from({ length: TOTAL_STUDENTS }, (_, i) => i + 1);
+    const picked = [];
+    for (let i = 0; i < PICK_COUNT; i++) {
+      const idx = Math.floor(Math.random() * pool.length);
+      picked.push(pool.splice(idx, 1)[0]);
+    }
+    return picked;
+  }
+
+  function spawnDust(x, y) {
+    for (let i = 0; i < 6; i++) {
+      const p = document.createElement('span');
+      p.className = 'dust-particle';
+      p.style.left = `${x + (Math.random() * 20 - 10)}px`;
+      p.style.top = `${y + (Math.random() * 10 - 5)}px`;
+      p.style.animationDelay = `${Math.random() * 0.15}s`;
+      dustLayer.appendChild(p);
+      setTimeout(() => p.remove(), 1000);
+    }
+  }
+
+  function flickerRandomCells(durationMs) {
+    return new Promise(resolve => {
+      const cells = numberGrid.querySelectorAll('.num-cell');
+      const interval = setInterval(() => {
+        cells.forEach(c => c.classList.remove('flicker'));
+        [...cells].sort(() => Math.random() - 0.5).slice(0, 4)
+          .forEach(c => c.classList.add('flicker'));
+      }, 90);
+
+      setTimeout(() => {
+        clearInterval(interval);
+        cells.forEach(c => c.classList.remove('flicker'));
+        resolve();
+      }, durationMs);
+    });
+  }
+
+  async function revealPicks(picked) {
+    for (let i = 0; i < picked.length; i++) {
+      const num = picked[i];
+      const cell = getCell(num);
+      cell.classList.add('picked');
+
+      const rect = cell.getBoundingClientRect();
+      spawnDust(rect.left + rect.width / 2, rect.top + rect.height / 2);
+
+      const slot = slots[i];
+      slot.querySelector('.slot-num').textContent = num;
+      slot.classList.add('filled');
+
+      await new Promise(r => setTimeout(r, 260));
+    }
+  }
+
+  // SweetAlert2: 결과 발표 팝업
+  function showResultPopup(picked) {
+    const numbersHtml = `
+      <div class="d-flex justify-content-center gap-2 flex-wrap mt-3">
+        ${picked.map(n => `
+          <span class="d-inline-flex align-items-center justify-content-center rounded-circle fw-bold"
+                style="width:52px;height:52px;background:#f4f1e6;color:#182a22;font-family:'Gaegu',sans-serif;font-size:1.4rem;">
+            ${n}
+          </span>`).join('')}
+      </div>`;
+
+    return Swal.fire({
+      title: '오늘의 청소당번 발표!',
+      html: numbersHtml,
+      icon: 'success',
+      confirmButtonText: '좋아요!',
+      background: 'transparent',
+      customClass: {
+        popup: 'swal-chalk-popup',
+        title: 'swal-chalk-title',
+        htmlContainer: 'swal-chalk-text',
+        confirmButton: 'swal-chalk-confirm btn px-4 py-2 rounded-lg'
+      },
+      buttonsStyling: false
+    });
+  }
+
+  // SweetAlert2: 재추첨 확인
+  function confirmRedraw() {
+    return Swal.fire({
+      title: '다시 뽑을까요?',
+      text: '지금까지의 결과가 지워지고 새로 뽑습니다.',
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: '다시 뽑기',
+      cancelButtonText: '취소',
+      background: 'transparent',
+      customClass: {
+        popup: 'swal-chalk-popup',
+        title: 'swal-chalk-title',
+        htmlContainer: 'swal-chalk-text',
+        confirmButton: 'swal-chalk-confirm btn px-4 py-2 rounded-lg me-2',
+        cancelButton: 'swal-chalk-cancel btn px-4 py-2 rounded-lg'
+      },
+      buttonsStyling: false,
+      reverseButtons: true
+    });
+  }
+
+  async function runDraw() {
+    if (hasDrawnBefore) {
+      const { isConfirmed } = await confirmRedraw();
+      if (!isConfirmed) return;
+    }
+
+    drawBtn.disabled = true;
+    resetBoard();
+    statusEl.textContent = '칠판을 두드리며 고르는 중...';
+
+    await flickerRandomCells(1100);
+
+    const picked = pickRandomStudents().sort((a, b) => a - b);
+
+    statusEl.textContent = '오늘의 청소당번을 적는 중...';
+    await revealPicks(picked);
+
+    statusEl.textContent = `오늘의 청소당번: ${picked.join(', ')}번`;
+    drawBtn.disabled = false;
+    hasDrawnBefore = true;
+
+    showResultPopup(picked);
+  }
+
+  drawBtn.addEventListener('click', runDraw);
+
+  buildGrid();
+</script>
+</body>
+</html>
